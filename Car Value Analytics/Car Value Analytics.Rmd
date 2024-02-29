@@ -1,0 +1,181 @@
+---
+title: "Car Value Analytics"
+author: Younseo Kim
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r, echo=F, include=F}
+# front-matter
+rm(list = ls()) #clear the workspace
+
+# load the typical libraries
+library(Stat2Data)
+library(tidyverse)
+library(mosaic)
+library(ggformula)
+library(Lock5Data)
+
+# define tukey plot function
+TukeyNonaddPlot=function(formula,data,out="n",main="Tukey Nonadditivity Plot",ylab="Residuals"){
+  require(mosaic)
+  mod=aov(formula,data)
+  newdata=mod$model
+  names(newdata)=c("Y","A","B")
+  newdata$A=factor(newdata$A); newdata$B=factor(newdata$B)
+  I=nlevels(newdata$A)
+  J=nlevels(newdata$B)
+  cellmeans=mean(Y~A+B,data=newdata)
+  celltable=matrix(cellmeans,nrow=I,ncol=J)
+  GrandMean=mean(cellmeans)
+  RowEffects=rep(rowMeans(celltable)-GrandMean,J)
+  ColEffects=rep(colMeans(celltable)-GrandMean,each=I)
+  Comparisons=RowEffects*ColEffects/GrandMean
+  CellResid=cellmeans-(RowEffects+ColEffects+GrandMean)
+  
+  plot(CellResid~Comparisons, pch=16, ylab=ylab)
+  modline=lm(CellResid~Comparisons)
+  abline(modline)
+  text(0,min(CellResid),paste("slope=",round(modline$coeff[2],2)),col="blue")
+  if(out=="comp"){return(Comparisons)}
+  if(out=="line"){return(modline)}
+  if(out=="resid"){return(CellResid)}
+}
+```
+
+# Introduction
+In our study, we are testing the hypothesis that certain factors - specifically, the age, mileage, model, and zip code of a used car - significantly influence its price. We hypothesize that older cars and those with higher mileage will generally be priced lower, while certain models and specific zip codes might have distinct impacts on the car's price. Our analysis aims to statistically validate whether these factors indeed play a significant role in determining the market value of used cars, using a data set of used car sales and employing linear regression with the natural logarithm of price as the dependent variable.
+
+# Load Data 
+
+```{r}
+data_ford16802 <- read.csv("C:/Users/leo/Desktop/ANOVAproject/data/ford16802.csv")
+data_ford07640 <- read.csv("C:/Users/leo/Desktop/ANOVAproject/data/ford07640.csv")
+data_honda16802 <- read.csv("C:/Users/leo/Desktop/ANOVAproject/data/honda16802.csv")
+data_honda07640 <- read.csv("C:/Users/leo/Desktop/ANOVAproject/data/honda07640.csv")
+data_toyota16802 <- read.csv("C:/Users/leo/Desktop/ANOVAproject/data/toyota16802.csv")
+data_toyota07640 <- read.csv("C:/Users/leo/Desktop/ANOVAproject/data/toyota07640.csv")
+```
+
+```{r}
+# combine used car data sets into one data set
+used_cars <- rbind(data_ford16802, data_ford07640, data_honda16802, data_honda07640, data_toyota16802, data_toyota07640)
+
+# calculate each car's age and create a new column
+used_cars$age <- 2020 - used_cars$year
+
+head(used_cars)
+```
+
+I am going to use car data sets from zip codes State College, PA 16802 (rural) and Harrington Park, NJ 07640 (exurban). And, car models that I am going use are Ford F150 (truck), Toyota Camry (sedan) and Honda CR-V (suv). I am going to compare price of the cars by the cars' locations where they are being sold and models of the cars. And, I am going to see how the locations and the type of car affect the price of the cars. 
+
+# EDA
+
+```{r}
+gf_boxplot(price ~ zip | model, data = used_cars, color = ~model)
+favstats(price ~ zip + model, data = used_cars)
+```
+
+From the boxplot, it seems like Ford F150 (truck) has wider range of the price, while Honda CR-V (suv) and Toyota Camry (sedan) have narrower range of the price. Also, Honda CR-V and Toyota Camry have similar range of the price. For the zip codes, it seems like there is not that big of a difference in the range of price. Moreover, from the boxplot and the favstats chart, Ford F150's average price is higher than Honda CR-V and Toyota Camry's average price. Also, Honda CR-V seems to have slightly higher average price than Toyota Camry. In addition, Ford F150 seems to have higher standard deviation than Honda CR-V and Toyota Camry. For the zip codes, Harrington Park, NJ 07640 (exurban) seems to have slightly higher average price of used cars than State College, PA 16802 (rural). And, different zip code does not seem to make a huge difference between standard deviation. Overall, both model and zip have effect on the price, but model seems to have stronger effect on the price.
+
+```{r}
+uc_anova <- aov(price ~ model + zip, data = used_cars)
+summary(uc_anova)
+```
+
+The p-value of model is less than 2.2E-16 from the ANOVA table, and the p-value of zip is 0.0001336 from the ANOVA table. Since p-value of model is less than p-value of zip, we have sufficient evidence that the car model has strong effect on the price than zip. In order to use the p-values in the conclusion, conditions of ANOVA should be checked.
+
+# ANOVA Condition Check
+
+## Part I
+
+```{r}
+# residual vs fitted plot
+mplot(uc_anova, which = 1)
+
+# normal Q-Q plot
+mplot(uc_anova, which = 2)
+```
+
+From the residuals vs fitted plot, it seems like equal variance condition for ANOVA is not met because the errors from the plot seem to form a fanning shape. From the normal Q-Q plot, it seems like normal distribution of error condition for ANOVA is not met because the residuals from the normal plot do not seem to lie along the line. This model does not meet the conditions of ANOVA, thus we would need to pre-process data in order to use ANOVA.
+
+```{r}
+# create uc_log data for log(sd) vs log(mean) plot
+uc_log <- used_cars %>% 
+  group_by(model, zip) %>%
+  summarise (mean = mean(price), sd = sd(price))
+
+# log(sd) vs log(mean) plot
+gf_point(log(sd) ~ log(mean), data = uc_log) %>% gf_lm()
+
+# finding slope
+uc_log_slope <- lm(log(sd) ~ log(mean), data = uc_log)
+
+summary(uc_log_slope)
+```
+
+In order for ANOVA model to meet ANOVA conditions, some kind of transformation is needed. By plotting a log(sd) vs log(mean) plot, we can decided what kind of transformation we need to perform. From Y^P, P is calculated by 1 - slope = 1 - 0.8154 = 0.1846. Since P is closer to 0 than 0.5, log transformation would improve the model to meet the ANOVA conditions.
+
+### Part II
+
+```{r}
+# log transformation of price column
+used_cars$log_price <- log(used_cars$price)
+
+# remove outliers
+used_cars <- used_cars[-c(1312, 1350),]
+
+# ANOVA model after log transformation
+uc_anova_log <- aov(log_price ~ model + zip, data = used_cars)
+
+# residuals vs fitted plot
+mplot(uc_anova_log, which = 1)
+
+# normal Q-Q plot
+mplot(uc_anova_log, which = 2)
+```
+
+Performing log transformation successfully fixed unequal variance of errors, but even after the transformation, some errors from the normal plot do not lie along the line. Thus, we will proceed with caution.
+
+## Part III
+
+```{r}
+gf_point(price ~ age, col = ~ model, shape = ~ zip, data = used_cars) %>% gf_lm()
+```
+
+This data also has age and mileage variable. From price vs age graph, there are some interactions after age of 7.5 year, but since these cars' original price do not differ dramatically, after 7.5 years, which is pretty old, the cars' price would be similar. Thus, we should account age until around 7.5 year. Considering that, there is no interaction between car model and age.
+
+```{r}
+gf_point(price ~ mileage, col = ~ model, shape = ~ zip, data = used_cars) %>% gf_lm()
+```
+
+For price vs mileage graph, there is one interaction a little bit before 100,000 mileage and many interaction after 100,000 mileage. According to 100,000 mileage rule, used cars with around 100,000 mileage would be considered unreliable. Since all the interactions are located beyond 100,000 mileage, we should only account mileage that is below 100,000 mileage. Since Honda CR-V and Toyota Camry's original price is not dramatically different, it is possible that the cars' used price become similar after riding it around 100,000 mileage. Considering that, there is no interaction between car model and mileage. Considering some possible conditions, we can say there is no interaction for neither age nor mileage. 
+
+```{r}
+uc_age_mileage <- lm(log(price) ~ age + mileage + model + zip, data = used_cars)
+
+# residual vs fitted plot
+mplot(uc_age_mileage, which = 1)
+
+# normal Q-Q plot
+mplot(uc_age_mileage, which = 2)
+
+histogram(residuals(uc_age_mileage))
+```
+
+From the residual vs fitted plot, it seems like there is no fanning shape, thus equal variance condition of errors condition is met. From the Normal plot, it seems like many errors do not lie along the line, but from the histogram, it seems like there is no important skewness. Therefore, normal distribution of errors condition is also met. Both equal variance of errors condition and normal distribution of errors condition are met, so we can make ANOVA conclusion. 
+
+# Conclusion
+
+```{r}
+summary(uc_age_mileage)
+```
+
+Based on the analysis of the provided linear regression model, we conclude that age, mileage, specific car models (Honda CR-V and Toyota Camry), and the zip code have a significant impact on the price of used cars. The model indicates that as a car ages or as its mileage increases, its price tends to decrease, with estimated reductions of approximately 6.84% ((e^-0.0705166 - 1) * 100) per year of age and 0.38% ((e^-0.0038489 - 1) * 100) per unit increase in mileage. Moreover, Honda CR-Vs and Toyota Camry are priced lower than other models in the data set, by about 33.52% ((e^-0.4108105 - 1) * 100) and 45.38% ((e^-0.6011225 - 1) * 100) respectively. Additionally, cars sold in zip code "16802" are priced about 4.40% ((e^0.0430536 - 1) * 100) higher than those in other areas. The model's high R-squared value of 0.8934 suggests that these factors collectively explain a significant portion of the variability in used car prices.
+
+```{r}
+anova(uc_age_mileage)
+```
+
+The ANOVA analysis conclusively demonstrates that age, mileage, car model, and zip code are all statistically significant factors affecting the price of used cars. Age and mileage have the most pronounced effects, strongly suggesting that the market value of a car decreases as it gets older and as its mileage increases. The model of the car also plays a critical role in determining its price, while the impact of the selling location (zip code) is comparatively smaller but still significant. This analysis provides valuable insights for understanding the pricing dynamics in the used car market.
