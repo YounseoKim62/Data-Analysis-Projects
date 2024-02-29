@@ -16,32 +16,6 @@ library(tidyverse)
 library(mosaic)
 library(ggformula)
 library(Lock5Data)
-
-# define tukey plot function
-TukeyNonaddPlot=function(formula,data,out="n",main="Tukey Nonadditivity Plot",ylab="Residuals"){
-  require(mosaic)
-  mod=aov(formula,data)
-  newdata=mod$model
-  names(newdata)=c("Y","A","B")
-  newdata$A=factor(newdata$A); newdata$B=factor(newdata$B)
-  I=nlevels(newdata$A)
-  J=nlevels(newdata$B)
-  cellmeans=mean(Y~A+B,data=newdata)
-  celltable=matrix(cellmeans,nrow=I,ncol=J)
-  GrandMean=mean(cellmeans)
-  RowEffects=rep(rowMeans(celltable)-GrandMean,J)
-  ColEffects=rep(colMeans(celltable)-GrandMean,each=I)
-  Comparisons=RowEffects*ColEffects/GrandMean
-  CellResid=cellmeans-(RowEffects+ColEffects+GrandMean)
-  
-  plot(CellResid~Comparisons, pch=16, ylab=ylab)
-  modline=lm(CellResid~Comparisons)
-  abline(modline)
-  text(0,min(CellResid),paste("slope=",round(modline$coeff[2],2)),col="blue")
-  if(out=="comp"){return(Comparisons)}
-  if(out=="line"){return(modline)}
-  if(out=="resid"){return(CellResid)}
-}
 ```
 
 # Introduction
